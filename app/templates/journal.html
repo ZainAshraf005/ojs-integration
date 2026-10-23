@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ journal.name }} · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>{{ journal.name }}</h1>
+<p class="meta"><span class="pid">{{ pid_url(journal.number) }}</span> <button type="button" class="copy" data-copy="{{ pid_url(journal.number) }}">Copy</button> · {{ total }} article{{ "s" if total != 1 }}</p>
+
+<div class="card">
+  {% if articles %}
+  <ul class="list">
+    {% for a in articles %}
+    <li>
+      <a class="title" href="/{{ journal.number }}/{{ a.number }}">{{ a.title or "Untitled" }}</a>
+      <div class="meta">{{ a.authors }}{% if a.date_published %} · {{ a.date_published }}{% endif %}</div>
+      <div class="meta"><span class="pid">{{ pid_url(journal.number, a.number) }}</span> <button type="button" class="copy" data-copy="{{ pid_url(journal.number, a.number) }}">Copy</button>{% if a.status == "withdrawn" %} · withdrawn at source{% endif %}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted ui">No articles archived yet.</p>
+  {% endif %}
+</div>
+
+{% if pages > 1 %}
+<nav class="pager">
+  {% if page > 1 %}<a href="?page={{ page - 1 }}">← Newer</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="?page={{ page + 1 }}">Older →</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

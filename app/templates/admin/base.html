@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Dashboard{% endblock %} · {{ site_name }}</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/admin">{{ site_name }}<small>Admin</small></a>
+      <nav>
+        <a href="/admin" class="{{ 'on' if nav == 'home' }}">OJS installs</a>
+        <a href="/admin/log" class="{{ 'on' if nav == 'log' }}">Activity</a>
+        <a href="/" target="_blank" rel="noopener">Public site ↗</a>
+      </nav>
+      <div class="who">
+        {% if worker_alive %}<span class="pill ok" title="Background worker is running">Worker running{% if queued %} · {{ queued }} queued{% endif %}</span>
+        {% else %}<span class="pill bad" title="Imports, syncing and health checks only run while the worker is running">Worker stopped</span>{% endif %}
+        <span class="hide-sm">{{ user.email }}</span>
+        <form class="inline" method="post" action="/admin/logout"><button class="btn sm">Log out</button></form>
+      </div>
+    </div>
+  </header>
+  <main>
+    <div class="wrap">
+      {% if not worker_alive %}
+      <div class="banner">The background worker isn't running, so nothing will be imported or synced. Start it with <code>uv run arq app.worker.main.WorkerSettings</code> (on the server it runs automatically).</div>
+      {% endif %}
+      {% for kind, message in messages %}<div class="flash {{ kind }}">{{ message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

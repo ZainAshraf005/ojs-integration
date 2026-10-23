@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+{% set nav = "log" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Activity</h1><div class="sub">Everything the archive did: imports, webhooks, problems.</div></div>
+  <div class="actions">
+    <a class="btn{{ ' primary' if not level }}" href="/admin/log">All</a>
+    <a class="btn{{ ' primary' if level == 'error' }}" href="/admin/log?level=error">Problems only</a>
+  </div>
+</div>
+<div class="card">
+  {% if events %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>When</th><th>Install</th><th>Type</th><th>What</th><th>Details</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+      <tr>
+        <td class="small muted num">{{ e.created_at.strftime("%d %b %Y, %H:%M") }}</td>
+        <td class="small">{{ sources.get(e.source_id, "") }}</td>
+        <td><span class="pill {{ 'bad' if e.level == 'error' else 'warn' if e.level == 'warning' else 'muted' }}">{{ e.kind }}</span></td>
+        <td class="small">{{ e.ref }}</td>
+        <td class="small">{{ e.message }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty">Nothing here yet.</div>
+  {% endif %}
+</div>
+<div class="actions" style="justify-content:center;margin-top:16px">
+  {% if p > 1 %}<a class="btn" href="?level={{ level }}&p={{ p - 1 }}">← Newer</a>{% endif %}
+  {% if has_more %}<a class="btn" href="?level={{ level }}&p={{ p + 1 }}">Older →</a>{% endif %}
+</div>
+{% endblock %}

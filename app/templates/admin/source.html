@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import source_status, post_button, pid %}
+{% set nav = "home" %}
+{% block title %}{{ source.name }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/admin">OJS installs</a> › {{ source.name }}</div>
+<div class="head">
+  <div>
+    <h1>{{ source.name }}</h1>
+    <div class="sub"><a href="{{ source.base_url }}" target="_blank" rel="noopener">{{ source.base_url }} ↗</a> {{ source_status(source) }}
+      <span class="small">Last full sync: {{ source.last_reconciled_at.strftime("%d %b %Y, %H:%M") if source.last_reconciled_at else "not yet" }}</span></div>
+  </div>
+  <div class="actions">
+    {{ post_button("/admin/sources/%d/health"|format(source.id), "Check health", csrf) }}
+    {{ post_button("/admin/sources/%d/sync"|format(source.id), "Sync now", csrf, primary=true) }}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Journals ({{ journals|length }})</h2>
+    <input class="filter" type="search" placeholder="Filter journals…" data-filter="#journals">
+  </div>
+  {% if journals %}
+  <div class="table-wrap">
+    <table id="journals">
+      <thead><tr><th>Journal</th><th>Journal ID</th><th>Articles</th><th class="hide-sm">PDFs</th><th class="hide-sm">Archiving</th></tr></thead>
+      <tbody>
+      {% for j, articles, pdfs in journals %}
+        <tr class="{{ 'dim' if not articles }}">
+          <td><a class="row-title" href="/admin/journals/{{ j.id }}">{{ j.name }}</a><div class="row-sub">{{ j.acronym if j.acronym and j.acronym|length < 20 else "" }} · /{{ j.ojs_path }}</div></td>
+          <td>{{ pid(pid_url(j.number)) }}</td>
+          <td class="num">{{ articles }}</td>
+          <td class="num hide-sm">{{ pdfs }}</td>
+          <td class="hide-sm">{% if j.enabled %}<span class="pill ok">On</span>{% else %}<span class="pill muted">Paused</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No journals yet. The import is probably still running: {% if worker_alive %}refresh in a moment{% else %}start the worker first{% endif %}.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <details>
+      <summary>Instant sync: plugin setup for this install</summary>
+      <p class="small muted">Without the plugin, new articles are picked up by the nightly sync (02:00). With it, they arrive within a minute of publishing.</p>
+      <ol class="small" style="padding-left:18px">
+        <li>Upload <code>archiveSync.tar.gz</code> in any journal of this install: <b>Settings → Website → Plugins → Upload a New Plugin</b>. One upload covers every journal in the install.</li>
+        <li>Add this block to the end of this install's <code>config.inc.php</code>:</li>
+      </ol>
+      {% set snippet = '[archivesync]\nwebhook_url = "' ~ webhook_url ~ '"\nwebhook_secret = "' ~ source.webhook_secret ~ '"' %}
+      <pre class="snippet">{{ snippet }}</pre>
+      <button type="button" class="btn sm" data-copy="{{ snippet }}">Copy config block</button>
+    </details>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <details>
+      <summary>Replace API key</summary>
+      <p class="small muted">Use this if the key was regenerated in OJS, or if syncing reports that the stored key can't be read.</p>
+      <form method="post" action="/admin/sources/{{ source.id }}/key" class="actions" style="max-width:520px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="password" name="api_key" placeholder="New API key" required autocomplete="off" style="flex:1;min-width:200px">
+        <button class="btn primary">Test and save</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endblock %}

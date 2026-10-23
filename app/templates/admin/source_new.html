@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% set nav = "home" %}
+{% block title %}Add OJS install{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/admin">OJS installs</a> › Add</div>
+<div class="head"><div><h1>Add an OJS install</h1>
+<div class="sub">We test the connection, then import every journal, article and PDF automatically.</div></div></div>
+
+<div class="grid2">
+  <div class="card"><div class="card-body">
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" type="text" name="name" value="{{ form.name or '' }}" placeholder="e.g. Main OJS, JALT" required maxlength="200">
+        <div class="hint">Only used inside this dashboard.</div>
+      </div>
+      <div class="field">
+        <label for="base_url">OJS address</label>
+        <input id="base_url" type="url" name="base_url" value="{{ form.base_url or '' }}" placeholder="https://studentsconsultancyhome.com/journal" required>
+        <div class="hint">The base address of the install, without <code>/index.php/…</code></div>
+      </div>
+      <div class="field">
+        <label for="api_key">API key</label>
+        <input id="api_key" type="password" name="api_key" required autocomplete="off">
+        <div class="hint">Stored encrypted. Never shown again.</div>
+      </div>
+      <button class="btn primary">Test connection and start import</button>
+    </form>
+  </div></div>
+
+  <div class="card"><div class="card-body small">
+    <b>Getting the API key</b>
+    <ol style="padding-left:18px;margin:8px 0 0">
+      <li>In that install's <code>config.inc.php</code>, under <code>[security]</code>, make sure <code>api_key_secret</code> has a value (set it once, then never change it).</li>
+      <li>Log in to OJS as the site admin.</li>
+      <li>Your name (top right) → <b>Edit Profile</b> → <b>API Key</b>.</li>
+      <li>Tick "Enable external applications…", click <b>Generate API Key</b>, save, and copy it here.</li>
+    </ol>
+  </div></div>
+</div>
+{% endblock %}

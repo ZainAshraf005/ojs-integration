@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE version SYSTEM "../../../lib/pkp/dtd/pluginVersion.dtd">
+<!--
+  * Plugin version information.
+  * lazy-load 0 = always active once installed (no need to enable it in each journal);
+  * it only acts when [archivesync] is set in config.inc.php.
+  -->
+<version>
+	<application>archiveSync</application>
+	<type>plugins.generic</type>
+	<release>1.0.0.0</release>
+	<date>2026-10-17</date>
+	<lazy-load>0</lazy-load>
+	<class>ArchiveSyncPlugin</class>
+</version>

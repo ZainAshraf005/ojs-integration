@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set title = (meta.fullTitle or meta.title)|localized|plain %}
+{% set pid = journal.number ~ "/" ~ article.number %}
+{% block title %}{{ title }} · {{ site_name }}{% endblock %}
+{% block head %}
+  <link rel="canonical" href="{{ base_url }}/{{ pid }}">
+  <meta name="description" content="{{ (meta.abstract|localized|plain)[:300] }}">
+  {# Google Scholar / Highwire tags so the preserved copy stays indexable #}
+  <meta name="citation_title" content="{{ title }}">
+  {% for au in meta.authors or [] %}<meta name="citation_author" content="{{ au.fullName or ((au.givenName|localized) ~ ' ' ~ (au.familyName|localized)) }}">
+  {% endfor %}<meta name="citation_journal_title" content="{{ journal.name }}">
+  {% if version.date_published %}<meta name="citation_publication_date" content="{{ version.date_published.strftime('%Y/%m/%d') }}">{% endif %}
+  {% if meta.doi %}<meta name="citation_doi" content="{{ meta.doi }}">{% endif %}
+  {% for f in files if f.mimetype == "application/pdf" %}{% if loop.first %}<meta name="citation_pdf_url" content="{{ base_url }}/{{ pid }}/file/{{ f.id }}">{% endif %}{% endfor %}
+  {% if reason == "withdrawn" %}<meta name="robots" content="noindex">{% endif %}
+{% endblock %}
+{% block content %}
+
+{% if reason == "unavailable" %}
+<div class="notice">The journal's website is currently unavailable, so you are viewing the preserved copy held by {{ site_name }}.</div>
+{% elif reason == "withdrawn" %}
+<div class="notice">This article is no longer published on the journal's website. {{ site_name }} keeps this preservation copy for the record.</div>
+{% elif reason == "direct" and healthy and article.origin_url %}
+<div class="notice info">You are viewing the preserved copy. <a href="{{ article.origin_url }}">Open the article on the journal's website →</a></div>
+{% endif %}
+
+<p class="meta">{{ journal.name }}{% if meta.pages %} · pp. {{ meta.pages }}{% endif %}</p>
+<h1>{{ title }}</h1>
+
+{% for au in meta.authors or [] %}
+<div class="authors">{{ au.fullName or ((au.givenName|localized) ~ " " ~ (au.familyName|localized)) }}{% if au.orcid %} · <a href="{{ au.orcid }}">ORCID</a>{% endif %}</div>
+{% for af in au.affiliations or [] %}<div class="affil">{{ af|localized }}</div>{% endfor %}
+{% endfor %}
+
+<div class="files">
+  {% for f in files %}
+  <a class="btn" href="/{{ pid }}/file/{{ f.id }}">Download {{ (f.label or "file")|upper }}{% if f.size %} ({{ "%.1f"|format(f.size / 1048576) }} MB){% endif %}</a>
+  {% endfor %}
+  {% if article.origin_url and healthy and reason != "direct" %}<a class="btn secondary" href="{{ article.origin_url }}">Journal page</a>{% endif %}
+</div>
+
+{% set abstract = meta.abstract|localized %}
+{% if abstract %}
+<h2>Abstract</h2>
+<div class="abstract">{% for p in abstract|paragraphs %}<p>{{ p }}</p>{% endfor %}</div>
+{% endif %}
+
+{% set kws = meta.keywords|keywords %}
+{% if kws %}
+<h2>Keywords</h2>
+<div class="tags">{% for k in kws %}<span class="tag">{{ k }}</span>{% endfor %}</div>
+{% endif %}
+
+<h2>Record</h2>
+<div class="card">
+<dl class="facts">
+  <dt>Identifier</dt><dd><span class="pid">{{ base_url }}/{{ pid }}</span> <button type="button" class="copy" data-copy="{{ base_url }}/{{ pid }}">Copy</button></dd>
+  {% if meta.doi %}<dt>DOI</dt><dd><a href="https://doi.org/{{ meta.doi }}">{{ meta.doi }}</a></dd>{% endif %}
+  {% if version.date_published %}<dt>Published</dt><dd>{{ version.date_published }}</dd>{% endif %}
+  <dt>Version</dt><dd>{{ version.version }}{% if article.versions|length > 1 %} of {{ article.versions|length }}: {% for v in article.versions %}<a href="/{{ pid }}/v{{ v.version }}?archive">v{{ v.version }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</dd>
+  {% if meta.licenseUrl %}<dt>License</dt><dd><a href="{{ meta.licenseUrl }}">{{ meta.licenseUrl }}</a></dd>{% endif %}
+  {% if article.origin_url %}<dt>Original</dt><dd><a href="{{ article.origin_url }}">{{ article.origin_url }}</a></dd>{% endif %}
+  {% for f in files %}<dt>SHA-256</dt><dd><code>{{ f.sha256 }}</code></dd>{% endfor %}
+  <dt>Archived</dt><dd>{{ version.created_at.strftime("%Y-%m-%d") }}</dd>
+</dl>
+</div>
+{% endblock %}

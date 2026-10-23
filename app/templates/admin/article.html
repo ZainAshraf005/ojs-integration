@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import article_status, post_button, pid %}
+{% set nav = "home" %}
+{% block title %}{{ article.title[:60] or "Article" }}{% endblock %}
+{% block content %}
+{% set url = pid_url(journal.number, article.number) %}
+<div class="crumbs"><a href="/admin">OJS installs</a> › <a href="/admin/sources/{{ source.id }}">{{ source.name }}</a> › <a href="/admin/journals/{{ journal.id }}">{{ journal.name }}</a> › Article {{ article.number }}</div>
+<div class="head">
+  <div style="min-width:0;flex:1">
+    <h1>{{ article.title or "Untitled" }}</h1>
+    <div class="sub">{{ article.authors }}{% if article.date_published %} · {{ article.date_published.strftime("%d %b %Y") }}{% endif %} {{ article_status(article, source) }}</div>
+  </div>
+  <div class="actions">{{ post_button("/admin/articles/%d/sync"|format(article.id), "Re-sync from OJS", csrf) }}</div>
+</div>
+
+<div class="grid2">
+  <div>
+    <div class="card"><div class="card-body">
+      <div class="small muted" style="margin-bottom:6px">Article ID: share this link instead of the OJS address</div>
+      {{ pid(url, big=true) }}
+      <div class="actions" style="margin-top:14px">
+        <a class="btn" href="{{ url }}" target="_blank" rel="noopener">Open ID link ↗</a>
+        <a class="btn" href="{{ url }}?archive" target="_blank" rel="noopener">Public archive page ↗</a>
+        {% if article.origin_url %}<a class="btn" href="{{ article.origin_url }}" target="_blank" rel="noopener">Original in OJS ↗</a>{% endif %}
+      </div>
+    </div></div>
+
+    <div class="card">
+      <div class="card-head"><h2>Files</h2></div>
+      <div class="table-wrap"><table><tbody>
+      {% for v in article.versions|reverse %}{% for f in v.files %}
+        <tr>
+          <td><span class="row-title">{{ f.original_name or f.label }}</span><div class="row-sub">Version {{ v.version }} · {{ f.mimetype }} · {{ f.size|filesize }}</div></td>
+          <td>{% if f.status == "stored" %}<a class="btn sm primary" href="/admin/files/{{ f.id }}" target="_blank" rel="noopener">Open</a>
+              {% elif f.status == "remote" %}<a class="btn sm" href="{{ f.source_url }}" target="_blank" rel="noopener">External link</a>
+              {% else %}<span class="pill bad" title="{{ f.error or '' }}">Download failed</span>{% endif %}</td>
+        </tr>
+      {% endfor %}{% else %}
+        <tr><td class="empty">No files.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    </div>
+
+    {% set abstract = meta.abstract|localized %}
+    {% if abstract %}
+    <div class="card"><div class="card-head"><h2>Abstract</h2></div><div class="card-body">
+      {% for p in abstract|paragraphs %}<p style="margin:0 0 10px">{{ p }}</p>{% endfor %}
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card"><div class="card-head"><h2>Details</h2></div><div class="card-body">
+      <dl class="facts small">
+        <dt>Journal</dt><dd>{{ journal.name }}</dd>
+        <dt>OJS article</dt><dd>#{{ article.ojs_submission_id }}</dd>
+        {% if meta.pages %}<dt>Pages</dt><dd>{{ meta.pages }}</dd>{% endif %}
+        {% if article.doi %}<dt>DOI</dt><dd><a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noopener">{{ article.doi }}</a></dd>{% endif %}
+        <dt>Versions</dt><dd>{{ article.versions|length }}</dd>
+        <dt>Archived</dt><dd>{{ article.created_at.strftime("%d %b %Y") }}</dd>
+        <dt>Last synced</dt><dd>{{ article.updated_at.strftime("%d %b %Y, %H:%M") }}</dd>
+        <dt>OJS page checked</dt><dd>{{ article.origin_checked_at.strftime("%d %b, %H:%M") if article.origin_checked_at else "not yet" }}</dd>
+        {% set kws = meta.keywords|keywords %}
+        {% if kws %}<dt>Keywords</dt><dd>{{ kws|join(", ") }}</dd>{% endif %}
+      </dl>
+    </div></div>
+
+    <div class="card"><div class="card-head"><h2>History</h2></div>
+      <div class="table-wrap"><table><tbody>
+      {% for e in events %}
+        <tr><td class="small"><span class="pill {{ 'bad' if e.level == 'error' else 'muted' }}">{{ e.kind }}</span> {{ e.message }}<div class="row-sub">{{ e.created_at.strftime("%d %b %Y, %H:%M") }}</div></td></tr>
+      {% else %}
+        <tr><td class="empty small">No events.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

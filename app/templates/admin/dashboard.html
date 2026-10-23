@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import source_status %}
+{% set nav = "home" %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>OJS installs</h1>
+    <div class="sub">Each install is checked and synced automatically. Open one to see its journals.</div>
+  </div>
+  <div class="actions"><a class="btn primary" href="/admin/sources/new">+ Add OJS install</a></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>{{ rows|length }}</b><span>OJS installs</span></div>
+  <div class="stat"><b>{{ totals.journals }}</b><span>journals</span></div>
+  <div class="stat"><b>{{ totals.articles }}</b><span>articles archived</span></div>
+  <div class="stat"><b>{{ totals.files }}</b><span>PDFs stored · {{ totals.bytes|filesize or "0 KB" }}</span></div>
+</div>
+
+<div class="card">
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Install</th><th>Status</th><th>Journals</th><th>Articles</th><th class="hide-sm">Last full sync</th></tr></thead>
+      <tbody>
+      {% for source, journals, articles, active in rows %}
+        <tr>
+          <td><a class="row-title" href="/admin/sources/{{ source.id }}">{{ source.name }}</a><div class="row-sub">{{ source.base_url }}</div></td>
+          <td>{{ source_status(source) }}</td>
+          <td class="num">{{ journals }}<div class="row-sub">{{ active }} with articles</div></td>
+          <td class="num">{{ articles }}</td>
+          <td class="hide-sm small muted">{{ source.last_reconciled_at.strftime("%d %b %Y, %H:%M") if source.last_reconciled_at else "Not yet" }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No OJS installs yet. <a href="/admin/sources/new">Add your first one</a>: you only need its URL and an API key.</div>
+  {% endif %}
+</div>
+
+{% if problems %}
+<div class="card">
+  <div class="card-head"><h2>Recent problems</h2><a class="small" href="/admin/log?level=error">See all</a></div>
+  <div class="table-wrap"><table><tbody>
+    {% for e in problems %}
+    <tr><td class="small muted num">{{ e.created_at.strftime("%d %b, %H:%M") }}</td><td class="small">{{ e.ref }}</td><td class="small">{{ e.message }}</td></tr>
+    {% endfor %}
+  </tbody></table></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% macro pid(url, big=false) -%}
+<span class="pid{{ ' big' if big }}"><code title="{{ url }}">{{ url }}</code><button type="button" class="btn sm" data-copy="{{ url }}">Copy</button></span>
+{%- endmacro %}
+
+{% macro article_status(article, source) -%}
+{% if article.status == "withdrawn" %}<span class="pill bad" title="Unpublished or deleted in OJS. The archive copy is kept.">Withdrawn in OJS</span>
+{% elif not source.is_up %}<span class="pill warn" title="The OJS site is down, so visitors see the archive copy">OJS down: archive shown</span>
+{% elif not article.origin_ok %}<span class="pill warn" title="The article page on OJS is failing, so visitors see the archive copy">Page failing: archive shown</span>
+{% elif not article.origin_checked_at %}<span class="pill muted">Not checked yet</span>
+{% else %}<span class="pill ok">Live on OJS</span>{% endif %}
+{%- endmacro %}
+
+{% macro source_status(source) -%}
+{% if not source.enabled %}<span class="pill muted">Paused</span>
+{% elif not source.checked_at %}<span class="pill muted">Not checked yet</span>
+{% elif source.is_up %}<span class="pill ok">Online</span>
+{% else %}<span class="pill bad" title="{{ source.last_error or '' }}">Down</span>{% endif %}
+{%- endmacro %}
+
+{% macro csrf_field(csrf) %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+
+{% macro post_button(action, label, csrf, primary=false) -%}
+<form class="inline" method="post" action="{{ action }}">{{ csrf_field(csrf) }}<button class="btn{{ ' primary' if primary }}">{{ label }}</button></form>
+{%- endmacro %}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Log in · {{ site_name }}</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="card login">
+      <div class="card-body">
+        <h1>{{ site_name }} admin</h1>
+        {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+        <form method="post">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <div class="field"><label for="email">Email</label><input id="email" type="email" name="email" required autofocus autocomplete="username"></div>
+          <div class="field"><label for="password">Password</label><input id="password" type="password" name="password" required autocomplete="current-password"></div>
+          <button class="btn primary" style="width:100%;justify-content:center">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

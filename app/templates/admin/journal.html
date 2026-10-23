@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import article_status, post_button, pid %}
+{% set nav = "home" %}
+{% block title %}{{ journal.name }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/admin">OJS installs</a> › <a href="/admin/sources/{{ source.id }}">{{ source.name }}</a> › {{ journal.name }}</div>
+<div class="head">
+  <div>
+    <h1>{{ journal.name }}</h1>
+    <div class="sub">
+      {{ pid(pid_url(journal.number)) }}
+      <a href="{{ source.base_url }}/index.php/{{ journal.ojs_path }}" target="_blank" rel="noopener">Open in OJS ↗</a>
+      {% if not journal.enabled %}<span class="pill muted">Archiving paused</span>{% endif %}
+    </div>
+  </div>
+  <div class="actions">
+    {{ post_button("/admin/journals/%d/toggle"|format(journal.id), "Pause archiving" if journal.enabled else "Resume archiving", csrf) }}
+    {{ post_button("/admin/journals/%d/sync"|format(journal.id), "Sync this journal", csrf, primary=true) }}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Articles ({{ articles|length }})</h2>
+    <input class="filter" type="search" placeholder="Filter by title, author, ID…" data-filter="#articles">
+  </div>
+  {% if articles %}
+  <div class="table-wrap">
+    <table id="articles">
+      <thead><tr><th>Article</th><th>Article ID</th><th>PDF</th><th class="hide-sm">Status</th></tr></thead>
+      <tbody>
+      {% for a in articles %}
+        <tr>
+          <td>
+            <a class="row-title" href="/admin/articles/{{ a.id }}">{{ a.title or "Untitled" }}</a>
+            <div class="row-sub">{{ a.authors }}{% if a.date_published %} · {{ a.date_published.strftime("%d %b %Y") }}{% endif %}</div>
+          </td>
+          <td>{{ pid(pid_url(journal.number, a.number)) }}</td>
+          <td>
+            {% set files = a.versions[-1].files|selectattr("status", "equalto", "stored")|list if a.versions else [] %}
+            {% for f in files %}<a class="btn sm" href="/admin/files/{{ f.id }}" target="_blank" rel="noopener">Open {{ (f.label or "file")|upper }}</a> {% else %}<span class="pill bad">No file</span>{% endfor %}
+          </td>
+          <td class="hide-sm">{{ article_status(a, source) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">No articles archived for this journal yet. In OJS it may have no published articles, or the sync hasn't run. Click <b>Sync this journal</b>.</div>
+  {% endif %}
+</div>
+{% endblock %}

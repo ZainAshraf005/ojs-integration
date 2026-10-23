@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Search · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Search</h1>
+{% if q %}
+<p class="meta">{{ results|length }}{% if results|length == 100 %}+{% endif %} result{{ "s" if results|length != 1 }} for "{{ q }}"</p>
+<div class="card">
+  {% if results %}
+  <ul class="list">
+    {% for a in results %}
+    <li>
+      <a class="title" href="/{{ a.journal.number }}/{{ a.number }}">{{ a.title or "Untitled" }}</a>
+      <div class="meta">{{ a.authors }} · {{ a.journal.name }}{% if a.date_published %} · {{ a.date_published.year }}{% endif %} · <span class="pid">{{ a.journal.number }}/{{ a.number }}</span></div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted ui">Nothing matched. Try fewer words, an author's surname, or paste an identifier such as 1001/3101.</p>
+  {% endif %}
+</div>
+{% else %}
+<p class="muted ui">Search by title, author, DOI, or paste an identifier.</p>
+{% endif %}
+{% endblock %}

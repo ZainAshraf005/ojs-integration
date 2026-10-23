@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Persistent identifiers for our journals</h1>
+<p class="muted">Every article gets a permanent link like <span class="pid">{{ base_url }}/1001/3101</span>. It opens the journal's own page while that is online, and a preserved copy with the full text when it isn't.</p>
+
+<div class="stats">
+  <div class="card stat"><b>{{ stats.journals }}</b><span>journals</span></div>
+  <div class="card stat"><b>{{ stats.articles }}</b><span>articles</span></div>
+  <div class="card stat"><b>{{ stats.files }}</b><span>preserved files</span></div>
+</div>
+
+<h2>Journals</h2>
+<div class="card">
+  {% if journals %}
+  <ul class="list">
+    {% for journal, count in journals %}
+    <li>
+      <a class="title" href="/{{ journal.number }}">{{ journal.name }}</a>
+      <div class="meta"><span class="pid">{{ journal.number }}</span> · {{ count }} article{{ "s" if count != 1 }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted ui">No articles archived yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
