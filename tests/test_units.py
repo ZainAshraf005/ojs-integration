@@ -2,7 +2,11 @@ import os
 
 os.environ.setdefault("APP_SECRET_KEY", "test-secret")
 
+import httpx
+import pytest
+
 from app.health import page_shows_article
+from app.ojs.client import OJSClient, OJSError
 from app.ojs.metadata import clean_publication, keyword_list, localized, metadata_hash, paragraphs
 from app.security import encrypt, decrypt, hash_password, sign_webhook, verify_password, verify_webhook
 
@@ -78,3 +82,11 @@ def test_health_needs_article_title_not_just_200():
     assert not page_shows_article("<h1>Account suspended</h1>", "URBANIZATION AND ENVIRONMENTAL CHALLENGES")
     # OJS 3.5 titles can contain inline HTML
     assert page_shows_article("<h1>The <b>Effectiveness</b> of CLT</h1>", "<b>THE EFFECTIVENESS OF CLT</b>")
+
+
+async def test_push_identifiers_reports_plugin_refusal_sent_with_http_200():
+    async with OJSClient("https://ojs.example/journal", "t", delay=0) as ojs:
+        ojs._http = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"error": "bad signature"})))
+        with pytest.raises(OJSError, match="bad signature"):
+            await ojs.push_identifiers("jest", [{"submissionId": 1, "identifier": "https://x/1001/1?redirect"}], "s")

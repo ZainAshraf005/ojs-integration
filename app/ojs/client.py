@@ -137,6 +137,9 @@ class OJSClient:
             result = None
         if resp.status_code != 200 or not isinstance(result, dict):
             raise OJSError(f"POST {url} -> HTTP {resp.status_code}: {resp.text[:300]}")
+        if result.get("error"):  # OJS can send the plugin's refusals with HTTP 200
+            raise OJSError(f"archiveSync plugin refused the IDs: {result['error']} "
+                           "(if 'bad signature': the webhook_secret in config.inc.php doesn't match this install's)")
         return result
 
     # --- Public pages & files -------------------------------------------------
