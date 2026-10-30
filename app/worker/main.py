@@ -24,6 +24,11 @@ def sync_job_id(source_id: int, journal_id: int, submission_id: int) -> str:
     return f"sync:{source_id}:{journal_id}:{submission_id}"
 
 
+async def _enqueue_push(ctx, source_id: int) -> None:
+    # Deferred so the syncs of a whole issue being published go to OJS as one batch
+    await ctx["redis"].enqueue_job("push_identifiers_job", source_id, _job_id=f"push-ids:{source_id}", _defer_by=60)
+
+
 async def _enqueue_sync(ctx, source_id: int, journal_id: int, submission_id: int, defer: int = 0) -> None:
     await ctx["redis"].enqueue_job("sync_article_job", source_id, journal_id, submission_id,
                                    _job_id=sync_job_id(source_id, journal_id, submission_id), _defer_by=defer)
@@ -47,6 +52,7 @@ async def sync_article_job(ctx, source_id: int, journal_id: int, submission_id: 
                               source_id=source_id, ref=f"{journal.ojs_path}/{submission_id}")
             await session.commit()
             raise
+    await _enqueue_push(ctx, source_id)
     if get_settings().s3_enabled:
         for file_id in new_file_ids:
             await ctx["redis"].enqueue_job("replicate_file_job", file_id, _job_id=f"replicate:{file_id}")
@@ -91,7 +97,32 @@ async def reconcile_source_job(ctx, source_id: int, journal_path: str | None = N
         source.last_reconciled_at = datetime.now(UTC)
         await sync.record(session, "reconcile", f"queued {queued} article syncs", source_id=source.id)
         await session.commit()
+    await _enqueue_push(ctx, source_id)  # also retries IDs that OJS didn't accept last time
     return queued
+
+
+async def push_identifiers_job(ctx, source_id: int) -> int:
+    """Write our article IDs into OJS. Failures are logged, not retried: the nightly reconcile queues this again."""
+    stored = 0
+    async with SessionLocal() as session:
+        source = await session.get(Source, source_id)
+        if not source or not source.enabled:
+            return 0
+        try:
+            async with sync.client_for(source) as ojs:
+                # Repeat while it makes progress, to pick up articles synced while a batch was being sent
+                for _ in range(5):
+                    if not (pushed := await sync.push_identifiers(session, source, ojs)):
+                        break
+                    stored += pushed
+        except OJSError as exc:
+            await session.rollback()
+            await sync.record(session, "ojs-id", f"could not write IDs to OJS: {exc}", level="warning",
+                              source_id=source_id)
+        if stored:
+            await sync.record(session, "ojs-id", f"{stored} article ID(s) written to OJS", source_id=source_id)
+        await session.commit()
+    return stored
 
 
 async def replicate_file_job(ctx, file_id: int) -> None:
@@ -159,7 +190,7 @@ async def replicate_pending(ctx) -> None:
 
 
 class WorkerSettings:
-    functions = [sync_article_job, reconcile_source_job, replicate_file_job, health_source_job]
+    functions = [sync_article_job, reconcile_source_job, replicate_file_job, health_source_job, push_identifiers_job]
     cron_jobs = [
         cron(reconcile_all, hour={2}, minute={0}),
         cron(health_check_all, minute=set(range(0, 60, 10))),

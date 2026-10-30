@@ -1,5 +1,5 @@
 [project]
-name = "sch-archive"
+name = "doi-services"
 version = "0.1.0"
 description = "Persistent identifiers and PDF backup for OJS journals"
 requires-python = ">=3.13"

@@ -1,4 +1,6 @@
+import io
 import re
+import tarfile
 
 import pytest
 
@@ -62,6 +64,7 @@ async def test_hierarchy_pages_show_ids_and_pdfs(admin):
 
     home = await admin.get("/admin")
     assert home.status_code == 200 and "Main" in home.text
+    assert "data-theme-toggle" in home.text and 'localStorage.getItem("theme")' in home.text
 
     source = await admin.get("/admin/sources/1")
     assert source.status_code == 200
@@ -95,3 +98,58 @@ async def test_login_never_redirects_off_site(admin):
     r = await admin.post("/admin/login?next=https://evil.example", data={
         "csrf": token, "email": "staff@example.com", "password": "a-long-password"})
     assert r.headers["location"] == "/admin"
+
+
+async def test_plugin_download_is_an_uploadable_package(admin):
+    assert (await admin.get("/admin/plugin/archiveSync.tar.gz")).status_code == 303  # login required
+    await login(admin)
+    r = await admin.get("/admin/plugin/archiveSync.tar.gz")
+    assert r.status_code == 200 and "archiveSync.tar.gz" in r.headers["content-disposition"]
+    names = tarfile.open(fileobj=io.BytesIO(r.content)).getnames()
+    assert "archiveSync/version.xml" in names and "archiveSync/ArchiveSyncPlugin.php" in names
+    assert "archiveSync/ArchiveSyncHandler.php" in names
+
+
+class FakeOJSClient:
+    """Stands in for OJSClient in the edit form: an install whose journals have these OJS ids."""
+
+    context_ids = [3]
+
+    def __init__(self, base_url, token, delay=None):
+        self.base_url, self.token = base_url, token
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def contexts(self):
+        for cid in self.context_ids:
+            yield {"id": cid, "urlPath": f"j{cid}"}
+
+
+async def test_edit_install_address_keeps_ids(admin, monkeypatch):
+    monkeypatch.setattr("app.routes.admin.OJSClient", FakeOJSClient)
+    await seed()
+    await login(admin)
+    token = csrf_of((await admin.get("/admin/sources/1/edit")).text)
+    r = await admin.post("/admin/sources/1/edit", data={
+        "csrf": token, "name": "Main", "base_url": "https://new.example/ojs/index.php", "api_key": ""})
+    assert r.status_code == 303 and r.headers["location"] == "/admin/sources/1"
+    assert [job[0] for job in app.state.redis.jobs] == ["reconcile_source_job", "health_source_job"]
+    page = await admin.get("/admin/articles/1")
+    assert 'href="https://new.example/ojs/index.php/jest/article/view/188"' in page.text  # "Original in OJS"
+    assert 'data-copy="http://testserver/1001/188"' in page.text  # same ID
+
+
+async def test_edit_refuses_a_different_install(admin, monkeypatch):
+    monkeypatch.setattr("app.routes.admin.OJSClient", FakeOJSClient)
+    monkeypatch.setattr(FakeOJSClient, "context_ids", [7, 8])
+    await seed()
+    await login(admin)
+    token = csrf_of((await admin.get("/admin/sources/1/edit")).text)
+    r = await admin.post("/admin/sources/1/edit", data={
+        "csrf": token, "name": "Main", "base_url": "https://other.example", "api_key": ""})
+    assert r.status_code == 400 and "different OJS install" in r.text
+    assert app.state.redis.jobs == []

@@ -1,8 +1,9 @@
 """Public pages: the resolver, archive landing pages, search and file downloads.
 
-    /{journal}/{article}          -> redirect to OJS if healthy, else archive page
-    /{journal}/{article}?archive  -> always the archive page
-    /{journal}/{article}/v{n}     -> a specific version
+    /{journal}/{article}           -> always our page (archive copy)
+    /{journal}/{article}?redirect  -> the article on OJS if it answers right now, else our page
+                                      (this is the link the archiveSync plugin shows in OJS)
+    /{journal}/{article}/v{n}      -> a specific version (also takes ?redirect)
     /{journal}/{article}/file/{id}-> the stored file (PDF)
     /{journal}                    -> journal page with its articles
 """
@@ -17,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_session
-from app.models import Article, ArticleVersion, File, Journal, Source
+from app.health import origin_reachable
+from app.models import REDIRECT_PARAM, Article, ArticleVersion, File, Journal, Source
 from app.storage import files as storage
 from app.templating import render
 
@@ -61,7 +63,7 @@ async def home(request: Request, session: AsyncSession = Depends(get_session)):
 async def search(request: Request, q: str = "", session: AsyncSession = Depends(get_session)):
     q = q.strip()
     if m := re.fullmatch(r"(?:https?://[^/]+/)?(\d+)/(\d+)", q):  # someone pasted an identifier
-        return RedirectResponse(f"/{m[1]}/{m[2]}?archive", status_code=302)
+        return RedirectResponse(f"/{m[1]}/{m[2]}", status_code=302)
     results = []
     if len(q) >= 2:
         pattern = f"%{q}%"
@@ -118,18 +120,13 @@ async def _resolve(request: Request, session: AsyncSession, j: int, a: int, vers
         if not version:
             return not_found(request, "This version")
 
-    want_archive = "archive" in request.query_params
-    healthy = _origin_healthy(article, article.journal.source)
-    if healthy and not want_archive:
-        target = version.origin_url if version_no is not None else article.origin_url
-        return RedirectResponse(target or article.origin_url, status_code=302)
-
-    if article.status == "withdrawn":
-        reason = "withdrawn"
-    elif want_archive:
-        reason = "direct"
-    else:
-        reason = "unavailable"
+    reason = "withdrawn" if article.status == "withdrawn" else "direct"
+    healthy = _origin_healthy(article, article.journal.source)  # last background check, for the "open on journal" link
+    if REDIRECT_PARAM in request.query_params and reason == "direct":
+        target = (version.origin_url if version_no is not None else None) or article.origin_url
+        if target and await origin_reachable(target, article.title):
+            return RedirectResponse(target, status_code=302)
+        reason, healthy = "unavailable", False
     return render(request, "article.html", article=article, journal=article.journal, version=version,
                   meta=version.metadata_, files=[f for f in version.files if f.status == "stored"],
                   reason=reason, healthy=healthy)

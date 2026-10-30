@@ -7,7 +7,10 @@
     <h1>OJS installs</h1>
     <div class="sub">Each install is checked and synced automatically. Open one to see its journals.</div>
   </div>
-  <div class="actions"><a class="btn primary" href="/admin/sources/new">+ Add OJS install</a></div>
+  <div class="actions">
+    <a class="btn" href="/admin/plugin/archiveSync.tar.gz" download title="Setup steps are on each install's page">Download OJS plugin{% if plugin_version %} v{{ plugin_version }}{% endif %}</a>
+    <a class="btn primary" href="/admin/sources/new">+ Add OJS install</a>
+  </div>
 </div>
 
 <div class="stats">

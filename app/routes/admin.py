@@ -3,6 +3,7 @@
     /admin                      all OJS installs
     /admin/sources/new          add an install (tests the API key, then starts importing)
     /admin/sources/{id}         its journals
+    /admin/sources/{id}/edit    rename, change its address (IDs stay), replace the API key
     /admin/journals/{id}        its articles, each with its ID (copy) and PDF
     /admin/articles/{id}        one article: files, versions, sync history
     /admin/log                  everything that happened
@@ -11,26 +12,40 @@ OJS stays the source of truth: article content isn't edited here, it's synced.
 """
 
 import asyncio
+import io
+import re
 import secrets
+import tarfile
+from functools import lru_cache
 from pathlib import Path
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import sync
 from app.config import get_settings
 from app.db import get_session
 from app.models import Article, ArticleVersion, File, Journal, Source, SyncEvent, User
 from app.ojs.client import OJSClient, OJSError
-from app.security import encrypt, verify_password
+from app.security import decrypt, encrypt, verify_password
 from app.storage import files as storage
 from app.sync import record
 from app.templating import render
 from app.worker.main import sync_job_id
 
 router = APIRouter(prefix="/admin")
+
+PLUGIN_DIR = Path(__file__).resolve().parents[2] / "ojs-plugin" / "archiveSync"
+
+
+@lru_cache
+def plugin_version() -> str:
+    match = re.search(r"<release>([\d.]+)</release>", (PLUGIN_DIR / "version.xml").read_text())
+    return match[1].removesuffix(".0") if match else ""
 
 
 class LoginRequired(Exception):
@@ -71,7 +86,7 @@ async def page(request: Request, name: str, user: User, status_code: int = 200, 
     queued = await redis.zcard("arq:queue")
     messages = request.session.pop("flash", [])
     return render(request, name, status_code=status_code, user=user, csrf=csrf_token(request),
-                  worker_alive=worker_alive, queued=queued, messages=messages, **ctx)
+                  worker_alive=worker_alive, queued=queued, messages=messages, plugin_version=plugin_version(), **ctx)
 
 
 def back(url: str) -> RedirectResponse:
@@ -166,7 +181,8 @@ async def new_source(request: Request, name: str = Form(...), base_url: str = Fo
     await record(session, "source", f"added by {user.email}; {journal_count} journals found", source_id=source.id)
     await session.commit()
     await request.app.state.redis.enqueue_job("reconcile_source_job", source.id, _job_id=f"reconcile:{source.id}")
-    flash(request, f"Connected: {journal_count} journals found. Importing has started in the background.")
+    flash(request, f"Connected: {journal_count} journals found. Importing has started in the background. "
+                   "Next: set up the OJS plugin below.")
     return back(f"/admin/sources/{source.id}")
 
 
@@ -205,24 +221,76 @@ async def source_sync(request: Request, source_id: int, user: User = Depends(cur
     return back(f"/admin/sources/{source_id}")
 
 
-@router.post("/sources/{source_id}/key", dependencies=[Depends(check_csrf)])
-async def source_key(request: Request, source_id: int, api_key: str = Form(...), user: User = Depends(current_user),
-                     session: AsyncSession = Depends(get_session)):
+@router.get("/sources/{source_id}/edit", response_class=HTMLResponse)
+async def edit_source_form(request: Request, source_id: int, user: User = Depends(current_user),
+                           session: AsyncSession = Depends(get_session)):
     source = await session.get(Source, source_id)
     if not source:
         raise HTTPException(404)
-    try:
-        async with OJSClient(source.base_url, api_key.strip(), delay=0) as ojs:
-            async for _ in ojs.contexts():
-                break
-    except OJSError as exc:
-        flash(request, f"Key not saved, OJS rejected it: {exc}", "error")
-        return back(f"/admin/sources/{source_id}")
-    source.api_token_enc = encrypt(api_key.strip())
-    await record(session, "source", f"API key replaced by {user.email}", source_id=source.id)
+    return await page(request, "admin/source_edit.html", user, source=source, error=None,
+                      form={"name": source.name, "base_url": source.base_url})
+
+
+@router.post("/sources/{source_id}/edit", dependencies=[Depends(check_csrf)])
+async def edit_source(request: Request, source_id: int, name: str = Form(...), base_url: str = Form(...),
+                      api_key: str = Form(""), user: User = Depends(current_user),
+                      session: AsyncSession = Depends(get_session)):
+    """Rename, change the address (the install moved), or replace the API key. IDs never change."""
+    source = await session.get(Source, source_id)
+    if not source:
+        raise HTTPException(404)
+    name, api_key = name.strip(), api_key.strip()
+    base_url = base_url.strip().rstrip("/").removesuffix("/index.php")
+    form = {"name": name, "base_url": base_url}
+
+    async def fail(error: str):
+        return await page(request, "admin/source_edit.html", user, status_code=400, source=source, error=error,
+                          form=form)
+
+    if not base_url.startswith(("http://", "https://")):
+        return await fail("The URL must start with https://")
+    if await session.scalar(select(Source).where(Source.id != source.id,
+                                                 (Source.base_url == base_url) | (Source.name == name))):
+        return await fail("Another install already uses this name or URL.")
+    moved = base_url != source.base_url
+    if moved or api_key:
+        try:
+            token = api_key or decrypt(source.api_token_enc)
+        except InvalidToken:
+            return await fail("The stored API key can't be read (APP_SECRET_KEY changed). Enter the API key again.")
+        try:
+            async with OJSClient(base_url, token, delay=0) as ojs:
+                found = {ctx["id"] async for ctx in ojs.contexts()}
+        except OJSError as exc:
+            hint = " Check the API key." if "401" in str(exc) or "403" in str(exc) else ""
+            return await fail(f"Could not connect to OJS at this address: {exc}.{hint}")
+        known = set(await session.scalars(select(Journal.ojs_context_id).where(Journal.source_id == source.id)))
+        if moved and known and not known & found:
+            return await fail("None of this install's journals exist at the new address, so it looks like a "
+                              "different OJS install. Add it as a new install instead.")
+
+    changes = []
+    if name != source.name:
+        changes.append(f"renamed {source.name} -> {name}")
+        source.name = name
+    if api_key:
+        source.api_token_enc = encrypt(api_key)
+        changes.append("API key replaced")
+    if moved:
+        await sync.move_source(session, source, base_url)
+        changes.append("address changed")
+    if changes:
+        await record(session, "source", f"{'; '.join(changes)} by {user.email}", source_id=source.id)
     await session.commit()
-    flash(request, "API key updated and working.")
-    return back(f"/admin/sources/{source_id}")
+    if moved:
+        await request.app.state.redis.enqueue_job("reconcile_source_job", source.id, _job_id=f"reconcile:{source.id}")
+        await request.app.state.redis.enqueue_job("health_source_job", source.id, _job_id=f"health:{source.id}")
+        flash(request, "Address updated. All IDs are unchanged; links now point to the new address, and every "
+                       "article is being re-synced to confirm them. Move the [archivesync] block in config.inc.php "
+                       "along with the install if it isn't there already.")
+    else:
+        flash(request, "Saved." if changes else "Nothing changed.")
+    return back(f"/admin/sources/{source.id}")
 
 
 @router.post("/sources/{source_id}/health", dependencies=[Depends(check_csrf)])
@@ -314,6 +382,18 @@ async def article_sync(request: Request, article_id: int, user: User = Depends(c
                                               _job_id=sync_job_id(j.source_id, j.id, article.ojs_submission_id))
     flash(request, "Re-sync queued.")
     return back(f"/admin/articles/{article_id}")
+
+
+@router.get("/plugin/archiveSync.tar.gz")
+async def plugin_download(user: User = Depends(current_user)):
+    """The OJS plugin, packaged for OJS's "Upload a New Plugin" (a folder named archiveSync inside)."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for path in sorted(PLUGIN_DIR.iterdir()):
+            if path.is_file():
+                tar.add(path, arcname=f"archiveSync/{path.name}")
+    return Response(buffer.getvalue(), media_type="application/gzip",
+                    headers={"Content-Disposition": 'attachment; filename="archiveSync.tar.gz"'})
 
 
 @router.get("/files/{file_id}")

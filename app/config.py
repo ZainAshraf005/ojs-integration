@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://archive:archive@localhost:5432/archive"
     redis_url: str = "redis://localhost:6379/0"
     app_secret_key: str  # signs sessions and encrypts stored OJS API tokens
-    public_base_url: str = "http://localhost:8000"  # e.g. https://sch.org
-    site_name: str = "SCH Archive"
+    public_base_url: str = "http://localhost:8000"  # e.g. https://doi-services.com
+    site_name: str = "DOI Services"
 
     # Storage
     storage_dir: Path = Path("data/files")
@@ -21,11 +21,15 @@ class Settings(BaseSettings):
     # Talking to OJS politely (Hostinger shared hosting has resource limits)
     ojs_request_delay: float = 0.5  # seconds between requests per worker job
     ojs_timeout: float = 60.0
-    user_agent: str = "SCH-Archive/0.1 (+archive bot)"
+    user_agent: str = "DOI-Services/0.1 (+https://doi-services.com)"
 
     # Webhooks
     webhook_max_skew: int = 300  # seconds a signed webhook stays valid
     webhook_sync_delay: int = 15  # wait before fetching, so OJS has finished its own writes
+
+    # ?redirect links: the journal's page is checked live (result cached) before sending readers there
+    redirect_check_timeout: float = 4.0
+    redirect_check_ttl: int = 120  # seconds
 
     # Health checks
     health_article_batch: int = 50  # articles re-checked per source per run

@@ -1,3 +1,4 @@
+{% from "_theme.html" import theme_init, theme_toggle -%}
 <!doctype html>
 <html lang="en">
 <head>
@@ -5,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>{% block title %}Dashboard{% endblock %} · {{ site_name }}</title>
-  <link rel="stylesheet" href="/static/admin.css">
+  {{ theme_init() }}
+  <link rel="stylesheet" href="{{ static_url('admin.css') }}">
 </head>
 <body>
   <header class="topbar">
@@ -19,6 +21,7 @@
       <div class="who">
         {% if worker_alive %}<span class="pill ok" title="Background worker is running">Worker running{% if queued %} · {{ queued }} queued{% endif %}</span>
         {% else %}<span class="pill bad" title="Imports, syncing and health checks only run while the worker is running">Worker stopped</span>{% endif %}
+        {{ theme_toggle() }}
         <span class="hide-sm">{{ user.email }}</span>
         <form class="inline" method="post" action="/admin/logout"><button class="btn sm">Log out</button></form>
       </div>
@@ -33,6 +36,6 @@
       {% block content %}{% endblock %}
     </div>
   </main>
-  <script src="/static/app.js"></script>
+  <script src="{{ static_url('app.js') }}"></script>
 </body>
 </html>

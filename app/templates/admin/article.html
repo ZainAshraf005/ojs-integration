@@ -19,8 +19,8 @@
       <div class="small muted" style="margin-bottom:6px">Article ID: share this link instead of the OJS address</div>
       {{ pid(url, big=true) }}
       <div class="actions" style="margin-top:14px">
-        <a class="btn" href="{{ url }}" target="_blank" rel="noopener">Open ID link ↗</a>
-        <a class="btn" href="{{ url }}?archive" target="_blank" rel="noopener">Public archive page ↗</a>
+        <a class="btn" href="{{ url }}?redirect" target="_blank" rel="noopener">Test ?redirect link ↗</a>
+        <a class="btn" href="{{ url }}" target="_blank" rel="noopener">Public archive page ↗</a>
         {% if article.origin_url %}<a class="btn" href="{{ article.origin_url }}" target="_blank" rel="noopener">Original in OJS ↗</a>{% endif %}
       </div>
     </div></div>
@@ -58,6 +58,7 @@
         {% if article.doi %}<dt>DOI</dt><dd><a href="https://doi.org/{{ article.doi }}" target="_blank" rel="noopener">{{ article.doi }}</a></dd>{% endif %}
         <dt>Versions</dt><dd>{{ article.versions|length }}</dd>
         <dt>Archived</dt><dd>{{ article.created_at.strftime("%d %b %Y") }}</dd>
+        <dt>ID in OJS</dt><dd>{{ ("saved " ~ article.ojs_id_pushed_at.strftime("%d %b %Y")) if article.ojs_id_pushed_at else ("not needed" if article.status != "published" else "pending") }}</dd>
         <dt>Last synced</dt><dd>{{ article.updated_at.strftime("%d %b %Y, %H:%M") }}</dd>
         <dt>OJS page checked</dt><dd>{{ article.origin_checked_at.strftime("%d %b, %H:%M") if article.origin_checked_at else "not yet" }}</dd>
         {% set kws = meta.keywords|keywords %}

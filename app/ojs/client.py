@@ -2,8 +2,10 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import tempfile
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.security import sign_webhook
 
 STATUS_PUBLISHED = 3
 PAGE_SIZE = 100
@@ -103,6 +106,38 @@ class OJSClient:
 
     async def publication(self, journal_path: str, submission_id: int, publication_id: int) -> dict:
         return await self.get_json(journal_path, f"submissions/{submission_id}/publications/{publication_id}")
+
+    # --- archiveSync plugin ---------------------------------------------------
+
+    def plugin_url(self, journal_path: str, op: str) -> str:
+        return f"{self.base_url}/index.php/{journal_path}/archivesync/{op}"
+
+    async def push_identifiers(self, journal_path: str, items: list[dict], secret: str) -> dict:
+        """Ask the archiveSync plugin to store our IDs on these articles.
+
+        Signed like the plugin's webhooks, in the other direction. Returns
+        {"stored": [submissionId, ...], "skipped": [{"submissionId": .., "reason": ..}]}.
+        """
+        url = self.plugin_url(journal_path, "identifiers")
+        body = json.dumps({"items": items}, separators=(",", ":")).encode()
+        timestamp = str(int(time.time()))
+        headers = {"Content-Type": "application/json", "X-ArchiveSync-Timestamp": timestamp,
+                   "X-ArchiveSync-Signature": sign_webhook(secret, timestamp, body)}
+        try:
+            resp = await self._http.post(url, content=body, headers=headers)
+        except httpx.TransportError as exc:
+            raise OJSError(f"POST {url}: {exc}") from exc
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if resp.status_code == 404:
+            raise OJSError(f"POST {url} -> HTTP 404: archiveSync plugin 1.1+ not installed on this OJS")
+        try:
+            result = resp.json()
+        except ValueError:
+            result = None
+        if resp.status_code != 200 or not isinstance(result, dict):
+            raise OJSError(f"POST {url} -> HTTP {resp.status_code}: {resp.text[:300]}")
+        return result
 
     # --- Public pages & files -------------------------------------------------
 

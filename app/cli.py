@@ -7,13 +7,13 @@
   backfill SOURCE_ID [--journal P]  import everything now, showing progress (no worker needed)
   queue-backfill SOURCE_ID          same, but hand it to the background worker
   sync-article SOURCE_ID PATH ID    re-sync a single article now
+  push-ids SOURCE_ID                write article IDs into OJS now (needs archiveSync plugin 1.1+)
   check-health [SOURCE_ID]          run health checks now
 """
 
 import argparse
 import asyncio
 import getpass
-import os
 import secrets
 import sys
 
@@ -53,7 +53,7 @@ def _plugin_config(source: Source) -> str:
 
 async def add_source(args) -> None:
     base_url = args.base_url.rstrip("/")
-    token = args.token or os.environ.get("OJS_API_TOKEN") or getpass.getpass("OJS API key: ")
+    token = args.token or getpass.getpass("OJS API key: ")
     print(f"Testing connection to {base_url} ...")
     try:
         async with OJSClient(base_url, token, delay=0) as ojs:
@@ -147,6 +147,21 @@ async def sync_article(args) -> None:
         print(f"Synced {journal.number}/{args.submission_id}: {len(new)} new file(s)")
 
 
+async def push_ids(args) -> None:
+    async with SessionLocal() as session:
+        source = await session.get(Source, args.source_id)
+        if not source:
+            sys.exit("No such source.")
+        try:
+            async with sync.client_for(source) as ojs:
+                stored = await sync.push_identifiers(session, source, ojs)
+        except OJSError as exc:
+            await session.commit()  # keep what was confirmed before the failure
+            sys.exit(f"Stopped: {exc}")
+        await session.commit()
+        print(f"{stored} article ID(s) written to OJS. Anything OJS refused is in /admin → Sync log.")
+
+
 async def check_health(args) -> None:
     async with SessionLocal() as session:
         query = select(Source).where(Source.enabled.is_(True))
@@ -168,7 +183,7 @@ def main() -> None:
 
     p = sub.add_parser("create-user"); p.add_argument("email"); p.set_defaults(fn=create_user)
     p = sub.add_parser("add-source"); p.add_argument("name"); p.add_argument("base_url")
-    p.add_argument("--token", help="API key (default: $OJS_API_TOKEN or prompt)"); p.set_defaults(fn=add_source)
+    p.add_argument("--token", help="API key (default: prompt)"); p.set_defaults(fn=add_source)
     p = sub.add_parser("list-sources"); p.set_defaults(fn=list_sources)
     p = sub.add_parser("plugin-config"); p.add_argument("source_id", type=int); p.set_defaults(fn=plugin_config)
     p = sub.add_parser("backfill"); p.add_argument("source_id", type=int); p.add_argument("--journal")
@@ -176,6 +191,7 @@ def main() -> None:
     p = sub.add_parser("queue-backfill"); p.add_argument("source_id", type=int); p.set_defaults(fn=queue_backfill)
     p = sub.add_parser("sync-article"); p.add_argument("source_id", type=int); p.add_argument("journal_path")
     p.add_argument("submission_id", type=int); p.set_defaults(fn=sync_article)
+    p = sub.add_parser("push-ids"); p.add_argument("source_id", type=int); p.set_defaults(fn=push_ids)
     p = sub.add_parser("check-health"); p.add_argument("source_id", type=int, nargs="?"); p.set_defaults(fn=check_health)
 
     args = parser.parse_args()

@@ -57,7 +57,7 @@
   <dt>Identifier</dt><dd><span class="pid">{{ base_url }}/{{ pid }}</span> <button type="button" class="copy" data-copy="{{ base_url }}/{{ pid }}">Copy</button></dd>
   {% if meta.doi %}<dt>DOI</dt><dd><a href="https://doi.org/{{ meta.doi }}">{{ meta.doi }}</a></dd>{% endif %}
   {% if version.date_published %}<dt>Published</dt><dd>{{ version.date_published }}</dd>{% endif %}
-  <dt>Version</dt><dd>{{ version.version }}{% if article.versions|length > 1 %} of {{ article.versions|length }}: {% for v in article.versions %}<a href="/{{ pid }}/v{{ v.version }}?archive">v{{ v.version }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</dd>
+  <dt>Version</dt><dd>{{ version.version }}{% if article.versions|length > 1 %} of {{ article.versions|length }}: {% for v in article.versions %}<a href="/{{ pid }}/v{{ v.version }}">v{{ v.version }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</dd>
   {% if meta.licenseUrl %}<dt>License</dt><dd><a href="{{ meta.licenseUrl }}">{{ meta.licenseUrl }}</a></dd>{% endif %}
   {% if article.origin_url %}<dt>Original</dt><dd><a href="{{ article.origin_url }}">{{ article.origin_url }}</a></dd>{% endif %}
   {% for f in files %}<dt>SHA-256</dt><dd><code>{{ f.sha256 }}</code></dd>{% endfor %}

@@ -11,6 +11,7 @@
       <span class="small">Last full sync: {{ source.last_reconciled_at.strftime("%d %b %Y, %H:%M") if source.last_reconciled_at else "not yet" }}</span></div>
   </div>
   <div class="actions">
+    <a class="btn" href="/admin/sources/{{ source.id }}/edit">Edit</a>
     {{ post_button("/admin/sources/%d/health"|format(source.id), "Check health", csrf) }}
     {{ post_button("/admin/sources/%d/sync"|format(source.id), "Sync now", csrf, primary=true) }}
   </div>
@@ -43,33 +44,26 @@
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card" id="plugin">
+  <div class="card-head">
+    <h2>OJS plugin setup for this install</h2>
+    <a class="btn primary" href="/admin/plugin/archiveSync.tar.gz" download>Download plugin{% if plugin_version %} v{{ plugin_version }}{% endif %}</a>
+  </div>
   <div class="card-body">
-    <details>
-      <summary>Instant sync: plugin setup for this install</summary>
-      <p class="small muted">Without the plugin, new articles are picked up by the nightly sync (02:00). With it, they arrive within a minute of publishing.</p>
-      <ol class="small" style="padding-left:18px">
-        <li>Upload <code>archiveSync.tar.gz</code> in any journal of this install: <b>Settings → Website → Plugins → Upload a New Plugin</b>. One upload covers every journal in the install.</li>
-        <li>Add this block to the end of this install's <code>config.inc.php</code>:</li>
-      </ol>
-      {% set snippet = '[archivesync]\nwebhook_url = "' ~ webhook_url ~ '"\nwebhook_secret = "' ~ source.webhook_secret ~ '"' %}
-      <pre class="snippet">{{ snippet }}</pre>
-      <button type="button" class="btn sm" data-copy="{{ snippet }}">Copy config block</button>
-    </details>
+    <p class="small muted" style="margin-top:0">The plugin sends new and unpublished articles here within a minute and shows each article's permanent link on its OJS page. Without it, new articles still arrive with the nightly sync (02:00), but OJS won't show the link.</p>
+    <ol class="steps">
+      <li><b>Download</b> <code>archiveSync.tar.gz</code> with the button above. Don't unpack it.</li>
+      <li><b>Upload it to OJS.</b> Log in to <a href="{{ source.base_url }}" target="_blank" rel="noopener">{{ source.base_url }}</a> as the site administrator, open any journal, then go to <b>Settings → Website → Plugins → Upload a New Plugin</b>, choose the file and click <b>Save</b>. One upload covers every journal in this install, and there is nothing to enable per journal. If an older version is installed, OJS offers to upgrade it instead.</li>
+      <li><b>Connect it to the archive.</b> In Hostinger <b>File Manager</b>, open this install's folder (where <code>index.php</code> is), edit <code>config.inc.php</code>, paste this block at the very end and save:
+        {% set snippet = '[archivesync]\nwebhook_url = "' ~ webhook_url ~ '"\nwebhook_secret = "' ~ source.webhook_secret ~ '"' %}
+        <pre class="snippet">{{ snippet }}</pre>
+        <button type="button" class="btn sm" data-copy="{{ snippet }}">Copy config block</button>
+        <div class="small muted" style="margin-top:6px">Optional: add <code>label = "Permanent link"</code> on its own line to change the heading shown above the link on article pages. Keep the secret private: it proves notifications come from this install.</div>
+      </li>
+      <li><b>Push links for existing articles.</b> Click <b>Sync now</b> at the top of this page. About a minute later every archived article shows its permanent link in OJS.</li>
+      <li><b>Test it.</b> Publish an article (or unpublish and republish one). The <a href="/admin/log">Activity</a> log should show a <code>webhook</code> entry right away and an <code>ojs-id</code> entry about a minute later.</li>
+    </ol>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-body">
-    <details>
-      <summary>Replace API key</summary>
-      <p class="small muted">Use this if the key was regenerated in OJS, or if syncing reports that the stored key can't be read.</p>
-      <form method="post" action="/admin/sources/{{ source.id }}/key" class="actions" style="max-width:520px">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="password" name="api_key" placeholder="New API key" required autocomplete="off" style="flex:1;min-width:200px">
-        <button class="btn primary">Test and save</button>
-      </form>
-    </details>
-  </div>
-</div>
 {% endblock %}

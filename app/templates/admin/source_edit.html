@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% set nav = "home" %}
+{% block title %}Edit {{ source.name }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="/admin">OJS installs</a> › <a href="/admin/sources/{{ source.id }}">{{ source.name }}</a> › Edit</div>
+<div class="head"><div><h1>Edit {{ source.name }}</h1>
+<div class="sub">Journal and article IDs never change, whatever you edit here.</div></div></div>
+
+<div class="grid2">
+  <div class="card"><div class="card-body">
+    {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" type="text" name="name" value="{{ form.name }}" required maxlength="200">
+      </div>
+      <div class="field">
+        <label for="base_url">OJS address</label>
+        <input id="base_url" type="url" name="base_url" value="{{ form.base_url }}" required>
+        <div class="hint">The base address of the install, without <code>/index.php/…</code></div>
+      </div>
+      <div class="field">
+        <label for="api_key">API key</label>
+        <input id="api_key" type="password" name="api_key" autocomplete="off" placeholder="Leave empty to keep the current key">
+        <div class="hint">Only needed if the key was regenerated in OJS. Stored encrypted.</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary">Test connection and save</button>
+        <a class="btn" href="/admin/sources/{{ source.id }}">Cancel</a>
+      </div>
+    </form>
+  </div></div>
+
+  <div class="card"><div class="card-body small">
+    <b>If the install moved to a new address</b>
+    <ol style="padding-left:18px;margin:8px 0 0">
+      <li>Enter the new address and save. We check it's the same install (same journals) before saving.</li>
+      <li>Links switch to the new address immediately, and every article is re-synced to confirm them.</li>
+      <li>Make sure the <code>[archivesync]</code> block is still at the end of <code>config.inc.php</code> at the new location.</li>
+    </ol>
+    <p style="margin:12px 0 0"><b>If only a journal's path changed</b> (e.g. <code>/jest</code> → <code>/jest-new</code>), you don't need to edit anything: click <b>Sync now</b> on the install's page. The journal keeps its number and its articles' links are updated.</p>
+  </div></div>
+</div>
+{% endblock %}

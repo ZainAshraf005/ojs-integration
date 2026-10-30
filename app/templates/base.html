@@ -1,10 +1,12 @@
+{% from "_theme.html" import theme_init, theme_toggle -%}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ site_name }}{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  {{ theme_init() }}
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -15,10 +17,11 @@
         <input type="search" name="q" value="{{ q or '' }}" placeholder="Title, author, DOI or identifier" aria-label="Search">
         <button type="submit">Search</button>
       </form>
+      {{ theme_toggle() }}
     </div>
   </header>
   <main><div class="wrap">{% block content %}{% endblock %}</div></main>
   <footer class="site"><div class="wrap">{{ site_name }}: persistent identifiers and preservation copies of scholarly articles.</div></footer>
-  <script src="/static/app.js"></script>
+  <script src="{{ static_url('app.js') }}"></script>
 </body>
 </html>

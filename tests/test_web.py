@@ -63,16 +63,38 @@ def signed(body: dict, secret="hook-secret", ts=None):
                  "Content-Type": "application/json"}
 
 
-async def test_resolver_redirects_when_origin_healthy(client):
+@pytest.fixture
+def ojs_reachable(monkeypatch):
+    """Controls the live check behind ?redirect links; records the URLs it was asked about."""
+    state = {"up": True, "checked": []}
+
+    async def fake(url, title):
+        state["checked"].append(url)
+        return state["up"]
+
+    monkeypatch.setattr("app.routes.public.origin_reachable", fake)
+    return state
+
+
+async def test_plain_link_always_shows_our_page(client, ojs_reachable):
     await seed()
     r = await client.get("/1001/188")
+    assert r.status_code == 200 and "viewing the preserved copy" in r.text
+    assert ojs_reachable["checked"] == []  # no live check for plain links
+
+
+async def test_redirect_link_goes_to_ojs_when_reachable(client, ojs_reachable):
+    await seed()
+    r = await client.get("/1001/188?redirect")
     assert r.status_code == 302
     assert r.headers["location"].endswith("/jest/article/view/188")
+    assert ojs_reachable["checked"] == ["https://ojs.example/journal/index.php/jest/article/view/188"]
 
 
-async def test_resolver_shows_archive_when_origin_down(client):
-    await seed(source_up=False)
-    r = await client.get("/1001/188")
+async def test_redirect_link_shows_our_page_when_ojs_down(client, ojs_reachable):
+    await seed()  # the background check still says healthy: the live check decides
+    ojs_reachable["up"] = False
+    r = await client.get("/1001/188?redirect")
     assert r.status_code == 200
     assert "currently unavailable" in r.text
     assert "Urbanization" in r.text
@@ -80,17 +102,28 @@ async def test_resolver_shows_archive_when_origin_down(client):
     assert 'name="citation_pdf_url"' in r.text
 
 
-async def test_resolver_withdrawn(client):
+async def test_resolver_withdrawn(client, ojs_reachable):
     await seed(status="withdrawn")
-    for url in ("/1001/188", "/1001/188?archive"):
+    for url in ("/1001/188", "/1001/188?redirect"):
         r = await client.get(url)
         assert r.status_code == 200 and "no longer published" in r.text
+    assert ojs_reachable["checked"] == []
 
 
-async def test_resolver_archive_param_skips_redirect(client):
-    await seed()
-    r = await client.get("/1001/188?archive")
-    assert r.status_code == 200 and "viewing the preserved copy" in r.text
+async def test_live_check_is_cached(monkeypatch):
+    from app import health
+
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(200, text="<h1>Urbanization and growth</h1>")
+
+    monkeypatch.setattr(health, "_reachable_cache", {})
+    monkeypatch.setattr(health, "_client", lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert await health.origin_reachable("https://ojs.example/a/188", "Urbanization and growth")
+    assert await health.origin_reachable("https://ojs.example/a/188", "Urbanization and growth")
+    assert len(calls) == 1
 
 
 async def test_unknown_ids_and_non_numeric_paths(client):
@@ -100,7 +133,7 @@ async def test_unknown_ids_and_non_numeric_paths(client):
     assert (await client.get("/1001")).status_code == 200
     assert (await client.get("/search?q=urban")).status_code == 200
     r = await client.get("/search?q=1001/188")
-    assert r.status_code == 302 and r.headers["location"] == "/1001/188?archive"
+    assert r.status_code == 302 and r.headers["location"] == "/1001/188"
 
 
 async def test_webhook_queues_sync(client):
@@ -127,3 +160,88 @@ async def test_webhook_rejects_bad_signature_and_replays(client):
     raw, headers = signed({"events": []}, ts=int(time.time()) - 3600)
     assert (await client.post(f"/hooks/ojs/{source_id}", content=raw, headers=headers)).status_code == 401
     assert app.state.redis.jobs == []
+
+
+class FakeOJS:
+    """Stands in for OJSClient: one published article (188) whose publication may already carry our ID."""
+
+    def __init__(self, archive_id=None, stored=None):
+        self.archive_id, self.stored, self.pushed = archive_id, stored, []
+
+    async def submission(self, path, sid):
+        return {"id": sid, "status": 3, "publications": [{"id": 188, "status": 3}], "lastModified": "2026-10-29"}
+
+    async def publication(self, path, sid, pub_id):
+        return {"id": pub_id, "version": 1, "title": {"en": "Urbanization"}, "archiveId": self.archive_id}
+
+    async def push_identifiers(self, path, items, secret):
+        self.pushed.append((path, items, secret))
+        return {"stored": [i["submissionId"] for i in items] if self.stored is None else self.stored,
+                "skipped": []}
+
+
+async def test_ids_are_pushed_to_ojs_once(client):
+    from app import sync
+
+    await seed()
+    async with SessionLocal() as s:
+        source = await s.get(Source, 1)
+        ojs = FakeOJS()
+        assert await sync.push_identifiers(s, source, ojs) == 1
+        assert ojs.pushed == [("jest", [{"submissionId": 188, "identifier": "http://testserver/1001/188?redirect"}], "hook-secret")]
+        assert (await s.get(Article, 1)).ojs_id_pushed_at is not None
+        assert await sync.push_identifiers(s, source, ojs) == 0  # nothing pending any more
+        assert len(ojs.pushed) == 1
+
+
+async def test_sync_requeues_id_when_ojs_lost_it(client):
+    from datetime import UTC, datetime
+
+    from app import sync
+
+    await seed()
+    async with SessionLocal() as s:
+        article = await s.get(Article, 1)
+        article.ojs_id_pushed_at = datetime.now(UTC)
+        await s.commit()
+        source, journal = await s.get(Source, 1), await s.get(Journal, 1)
+
+        await sync.sync_article(s, source, journal, FakeOJS(archive_id="http://testserver/1001/188?redirect"), 188)
+        assert (await s.get(Article, 1)).ojs_id_pushed_at is not None  # OJS has it: leave alone
+
+        await sync.sync_article(s, source, journal, FakeOJS(archive_id=None), 188)
+        assert (await s.get(Article, 1)).ojs_id_pushed_at is None  # OJS lost it: push again
+
+
+async def test_journal_path_change_keeps_number_and_resyncs(client):
+    from app import sync
+
+    class Contexts:
+        async def contexts(self):
+            yield {"id": 3, "urlPath": "jest-new", "name": {"en": "JEST"}}
+
+    await seed()
+    async with SessionLocal() as s:
+        article = await s.get(Article, 1)
+        article.ojs_last_modified = "2026-10-29"
+        await s.commit()
+        [journal] = await sync.discover_journals(s, await s.get(Source, 1), Contexts())
+        assert (journal.number, journal.ojs_path) == (1001, "jest-new")
+        await s.refresh(article)
+        assert article.ojs_last_modified is None  # next reconcile re-fetches it, with its new URL
+
+
+async def test_move_source_rewrites_links_and_keeps_ids(client):
+    from app import sync
+
+    await seed()
+    async with SessionLocal() as s:
+        source = await s.get(Source, 1)
+        await sync.move_source(s, source, "https://new.example/ojs")
+        await s.commit()
+    async with SessionLocal() as s:
+        article = await s.get(Article, 1)
+        assert (await s.get(Source, 1)).base_url == "https://new.example/ojs"
+        assert article.number == 188 and (await s.get(Journal, 1)).number == 1001
+        assert article.origin_url == "https://new.example/ojs/index.php/jest/article/view/188"
+        assert article.ojs_last_modified is None

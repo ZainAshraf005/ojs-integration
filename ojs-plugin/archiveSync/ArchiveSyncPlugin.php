@@ -5,19 +5,25 @@
  *
  * @class ArchiveSyncPlugin
  *
- * @brief Notifies the SCH Archive when an article is published or unpublished.
+ * @brief Connects OJS to the archive (doi-services.com).
  *
- * Install once per OJS installation; it covers every journal in it. It only
- * sends a small signed notification ("article X changed"). The archive then
- * fetches the metadata and PDFs itself through the REST API, so publishing in
- * OJS stays fast and nothing breaks if the archive is offline (its nightly
- * reconcile catches anything missed).
+ * Install once per OJS installation; it covers every journal in it.
+ *
+ * 1. On publish/unpublish it sends a small signed notification ("article X
+ *    changed"). The archive then fetches the metadata and PDFs itself through
+ *    the REST API, so publishing in OJS stays fast and nothing breaks if the
+ *    archive is offline (its nightly reconcile catches anything missed).
+ * 2. The archive sends back each article's permanent ID (signed with the same
+ *    secret) to /index.php/{journal}/archivesync/identifiers. It is stored on
+ *    the publication as "archiveId" and shown on the article page.
  *
  * Configure by adding to config.inc.php:
  *
  *   [archivesync]
- *   webhook_url = "https://sch.org/hooks/ojs/1"
+ *   webhook_url = "https://doi-services.com/hooks/ojs/1"
  *   webhook_secret = "..."
+ *   ; optional, the heading shown above the ID on the article page
+ *   label = "Permanent link"
  */
 
 namespace APP\plugins\generic\archiveSync;
@@ -40,9 +46,15 @@ class ArchiveSyncPlugin extends GenericPlugin
     public function register($category, $path, $mainContextId = null)
     {
         $success = parent::register($category, $path, $mainContextId);
-        if ($success && Application::isInstalled() && $this->isConfigured()) {
-            Hook::add('Publication::publish', $this->onPublicationChange(...));
-            Hook::add('Publication::unpublish', $this->onPublicationChange(...));
+        if ($success && Application::isInstalled()) {
+            // Always on, so stored IDs keep loading and showing even if the config block is removed
+            Hook::add('Schema::get::publication', $this->addArchiveIdToSchema(...));
+            Hook::add('Templates::Article::Details', $this->showArchiveId(...));
+            if ($this->isConfigured()) {
+                Hook::add('Publication::publish', $this->onPublicationChange(...));
+                Hook::add('Publication::unpublish', $this->onPublicationChange(...));
+                Hook::add('LoadHandler', $this->loadHandler(...));
+            }
         }
         return $success;
     }
@@ -54,7 +66,7 @@ class ArchiveSyncPlugin extends GenericPlugin
 
     public function getDescription()
     {
-        return 'Sends a signed notification to the SCH Archive whenever an article is published or unpublished, so it can preserve the metadata and PDF. Configured in config.inc.php under [archivesync].';
+        return 'Sends a signed notification to DOI Services (doi-services.com) whenever an article is published or unpublished, so it can preserve the metadata and PDF. Configured in config.inc.php under [archivesync].';
     }
 
     /** Applies to the whole installation, not one journal. */
@@ -66,6 +78,55 @@ class ArchiveSyncPlugin extends GenericPlugin
     private function isConfigured(): bool
     {
         return (bool) Config::getVar('archivesync', 'webhook_url') && (bool) Config::getVar('archivesync', 'webhook_secret');
+    }
+
+    /** Lets OJS store, load and return (REST API) the archive ID on every publication. */
+    public function addArchiveIdToSchema(string $hookName, array $args): bool
+    {
+        $schema = &$args[0];
+        $schema->properties->archiveId = (object) [
+            'type' => 'string',
+            'apiSummary' => true,
+            'validation' => ['nullable', 'max:255'],
+        ];
+        return Hook::CONTINUE;
+    }
+
+    /** Routes /index.php/{journal}/archivesync/identifiers to ArchiveSyncHandler. */
+    public function loadHandler(string $hookName, array $args): bool
+    {
+        $page = $args[0];
+        $op = $args[1];
+        if ($page !== 'archivesync' || $op !== 'identifiers') {
+            return Hook::CONTINUE;
+        }
+        $args[3] = new ArchiveSyncHandler();
+        return Hook::ABORT;
+    }
+
+    /**
+     * Adds the ID to the article page (default theme and themes based on it).
+     *
+     * Hook args: [$params, $smarty, &$output]
+     */
+    public function showArchiveId(string $hookName, array $args): bool
+    {
+        try {
+            $templateMgr = $args[1];
+            $output = &$args[2];
+            $publication = $templateMgr->getTemplateVars('publication');
+            $archiveId = $publication?->getData('archiveId');
+            if (!$archiveId) {
+                return Hook::CONTINUE;
+            }
+            $label = Config::getVar('archivesync', 'label') ?: 'Permanent link';
+            $url = htmlspecialchars($archiveId, ENT_QUOTES);
+            $output .= '<section class="item archive_id"><h2 class="label">' . htmlspecialchars($label, ENT_QUOTES)
+                . '</h2><div class="value"><a href="' . $url . '">' . $url . '</a></div></section>';
+        } catch (\Throwable $e) {
+            error_log('ArchiveSync: could not show archive ID: ' . $e->getMessage());
+        }
+        return Hook::CONTINUE;
     }
 
     /**

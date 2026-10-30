@@ -12,3 +12,8 @@
 	}
 	reverse_proxy app:8000
 }
+
+# www.doi-services.com -> doi-services.com (needs a DNS record for www too)
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}

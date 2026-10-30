@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f7f6f2;
   --surface: #ffffff;
   --text: #1d1d1b;
@@ -14,19 +15,18 @@
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161614;
-    --surface: #1f1f1c;
-    --text: #ecebe6;
-    --muted: #a5a39b;
-    --border: #34332e;
-    --accent: #8fb8de;
-    --accent-soft: #23303c;
-    --warn-bg: #3a2f14;
-    --warn-text: #f3d48a;
-    --ok: #8fd19e;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161614;
+  --surface: #1f1f1c;
+  --text: #ecebe6;
+  --muted: #a5a39b;
+  --border: #34332e;
+  --accent: #8fb8de;
+  --accent-soft: #23303c;
+  --warn-bg: #3a2f14;
+  --warn-text: #f3d48a;
+  --ok: #8fd19e;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -71,6 +71,13 @@ dl.facts dd { margin: 0; word-break: break-word; }
 .tag { font: 13px var(--ui); background: var(--accent-soft); padding: 3px 9px; border-radius: 999px; }
 .pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 24px; font: 15px var(--ui); }
 footer.site { border-top: 1px solid var(--border); padding: 20px 0; font: 14px var(--ui); color: var(--muted); }
+/* Theme toggle: shows the theme you'd switch to */
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); cursor: pointer; flex: none; }
+.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.theme-toggle svg { width: 17px; height: 17px; }
+.theme-toggle .sun, :root[data-theme="dark"] .theme-toggle .moon { display: none; }
+:root[data-theme="dark"] .theme-toggle .sun { display: block; }
+
 @media (max-width: 600px) {
   body { font-size: 16px; }
   h1 { font-size: 24px; }

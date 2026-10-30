@@ -2,7 +2,8 @@
 
 Hierarchy mirrors OJS:  Source (an OJS install) -> Journal -> Article -> Version -> File
 
-Public identifier:  {PUBLIC_BASE_URL}/{journal.number}/{article.number}
+Public identifier:  {PUBLIC_BASE_URL}/{journal.number}/{article.number}  (always our page)
+Link shown in OJS:  the same with ?redirect  (the journal's page while it's reachable)
 Both numbers are stored once and never recalculated, so IDs stay valid even if
 the OJS path, install or internal IDs change later.
 """
@@ -24,7 +25,23 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.config import get_settings
+
 JOURNAL_NUMBER_START = 1001
+
+
+def pid_url(journal_number: int, article_number: int | None = None) -> str:
+    """The public persistent identifier, e.g. https://doi-services.com/1003/188"""
+    base = f"{get_settings().public_base_url}/{journal_number}"
+    return base if article_number is None else f"{base}/{article_number}"
+
+
+REDIRECT_PARAM = "redirect"
+
+
+def redirect_url(journal_number: int, article_number: int) -> str:
+    """The link written into OJS: opens the article on the journal's site while it's reachable, else our copy."""
+    return f"{pid_url(journal_number, article_number)}?{REDIRECT_PARAM}"
 
 
 class Base(DeclarativeBase):
@@ -104,6 +121,8 @@ class Article(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default="published")
     origin_url: Mapped[str | None] = mapped_column(String(1000))
     ojs_last_modified: Mapped[str | None] = mapped_column(String(32))
+    # When OJS (archiveSync plugin) confirmed it stores our ID; None = still to be written there
+    ojs_id_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Health of the original article page
     origin_ok: Mapped[bool] = mapped_column(Boolean, default=True)

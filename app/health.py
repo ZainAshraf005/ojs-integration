@@ -1,10 +1,12 @@
 """Is the original OJS page actually working?
 
-The resolver never checks OJS live (a slow Hostinger would make every visitor
-wait). These checks run in the background and store the result.
+Background checks store the result for the dashboard. ?redirect links also check
+the page live (origin_reachable), with a short timeout and a cached result so a
+slow Hostinger only costs the first visitor a few seconds.
 """
 
 import re
+import time
 from datetime import UTC, datetime, timedelta
 from html import unescape
 
@@ -28,10 +30,10 @@ def page_shows_article(html: str, title: str) -> bool:
     return bool(needle) and needle in _normalize(re.sub(r"<[^>]+>", " ", html))
 
 
-def _client() -> httpx.AsyncClient:
+def _client(timeout: float = 20) -> httpx.AsyncClient:
     s = get_settings()
     # Hostinger's CDN answers 403 to requests without an Accept header.
-    return httpx.AsyncClient(timeout=20, follow_redirects=True, headers={
+    return httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={
         "User-Agent": s.user_agent, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"})
 
 
@@ -72,3 +74,24 @@ async def check_articles(session: AsyncSession, source: Source) -> tuple[int, in
             failing += not ok
     await session.commit()
     return len(articles), failing
+
+
+_reachable_cache: dict[str, tuple[float, bool]] = {}  # url -> (expires, ok), per app process
+
+
+async def origin_reachable(url: str, title: str) -> bool:
+    """Live check of an article page for ?redirect links. Never raises; slow or broken counts as down."""
+    s = get_settings()
+    now = time.monotonic()
+    if (cached := _reachable_cache.get(url)) and cached[0] > now:
+        return cached[1]
+    async with _client(timeout=s.redirect_check_timeout) as http:
+        try:
+            resp = await http.get(url)
+            ok = resp.status_code == 200 and page_shows_article(resp.text, title)
+        except httpx.HTTPError:
+            ok = False
+    if len(_reachable_cache) > 10_000:
+        _reachable_cache.clear()
+    _reachable_cache[url] = (now + s.redirect_check_ttl, ok)
+    return ok

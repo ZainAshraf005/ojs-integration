@@ -4,5 +4,4 @@
 data
 __pycache__
 .pytest_cache
-ojs-plugin
 *.tar.gz
