@@ -15,15 +15,17 @@
  *    archive is offline (its nightly reconcile catches anything missed).
  * 2. The archive sends back each article's permanent ID (signed with the same
  *    secret) to /index.php/{journal}/archivesync/identifiers. It is stored on
- *    the publication as "archiveId" and shown on the article page.
+ *    the publication as "archiveId" and shown on the article page as
+ *    "DOI: 1003/165" (linked), right after the keywords. It is inserted into the
+ *    finished page rather than through a theme hook, so it works with any theme.
  *
  * Configure by adding to config.inc.php:
  *
  *   [archivesync]
  *   webhook_url = "https://doi-services.com/hooks/ojs/1"
  *   webhook_secret = "..."
- *   ; optional, the heading shown above the ID on the article page
- *   label = "Permanent link"
+ *   ; optional, the label shown before the ID on the article page
+ *   label = "DOI"
  */
 
 namespace APP\plugins\generic\archiveSync;
@@ -43,13 +45,16 @@ class ArchiveSyncPlugin extends GenericPlugin
     /** @var array<int, ?string> */
     private array $contextPaths = [];
 
+    /** The ID to show on the article page being rendered, set just before it is displayed */
+    private ?string $pageArchiveId = null;
+
     public function register($category, $path, $mainContextId = null)
     {
         $success = parent::register($category, $path, $mainContextId);
         if ($success && Application::isInstalled()) {
             // Always on, so stored IDs keep loading and showing even if the config block is removed
             Hook::add('Schema::get::publication', $this->addArchiveIdToSchema(...));
-            Hook::add('Templates::Article::Details', $this->showArchiveId(...));
+            Hook::add('TemplateManager::display', $this->prepareArchiveId(...));
             if ($this->isConfigured()) {
                 Hook::add('Publication::publish', $this->onPublicationChange(...));
                 Hook::add('Publication::unpublish', $this->onPublicationChange(...));
@@ -105,28 +110,95 @@ class ArchiveSyncPlugin extends GenericPlugin
     }
 
     /**
-     * Adds the ID to the article page (default theme and themes based on it).
+     * Before the article page is rendered: remember its ID and ask for the finished HTML.
      *
-     * Hook args: [$params, $smarty, &$output]
+     * Hook args: [$templateMgr, &$template, &$output]
      */
-    public function showArchiveId(string $hookName, array $args): bool
+    public function prepareArchiveId(string $hookName, array $args): bool
     {
         try {
-            $templateMgr = $args[1];
-            $output = &$args[2];
-            $publication = $templateMgr->getTemplateVars('publication');
-            $archiveId = $publication?->getData('archiveId');
-            if (!$archiveId) {
+            [$templateMgr, $template] = $args;
+            if ($template !== 'frontend/pages/article.tpl') {
                 return Hook::CONTINUE;
             }
-            $label = Config::getVar('archivesync', 'label') ?: 'Permanent link';
-            $url = htmlspecialchars($archiveId, ENT_QUOTES);
-            $output .= '<section class="item archive_id"><h2 class="label">' . htmlspecialchars($label, ENT_QUOTES)
-                . '</h2><div class="value"><a href="' . $url . '">' . $url . '</a></div></section>';
+            $archiveId = $templateMgr->getTemplateVars('publication')?->getData('archiveId');
+            if ($archiveId) {
+                $this->pageArchiveId = (string) $archiveId;
+                $templateMgr->registerFilter('output', [$this, 'insertArchiveId']);
+            }
         } catch (\Throwable $e) {
             error_log('ArchiveSync: could not show archive ID: ' . $e->getMessage());
         }
         return Hook::CONTINUE;
+    }
+
+    /**
+     * Smarty output filter for the article page: adds "DOI: 1003/165" (linked) after the
+     * keywords, or where they would be (after the DOI or authors), or after the title.
+     * Works on the finished HTML, so it doesn't depend on the theme calling any hook.
+     */
+    public function insertArchiveId(string $output, $template = null): string
+    {
+        // Only the whole page (not fragments rendered on the way), and only once
+        if ($this->pageArchiveId === null || stripos($output, '</body>') === false) {
+            return $output;
+        }
+        $url = $this->pageArchiveId;
+        $this->pageArchiveId = null;
+        try {
+            return self::addArchiveIdToPage($output, $url, Config::getVar('archivesync', 'label') ?: 'DOI');
+        } catch (\Throwable $e) {
+            error_log('ArchiveSync: could not show archive ID: ' . $e->getMessage());
+            return $output;
+        }
+    }
+
+    /** Pure HTML work, kept separate so it can be tested without OJS. */
+    public static function addArchiveIdToPage(string $html, string $url, string $label): string
+    {
+        // Search inside the article only, so a sidebar keyword cloud etc. is never matched
+        $from = 0;
+        if (preg_match('/<article\b/i', $html, $m, PREG_OFFSET_CAPTURE)) {
+            $from = $m[0][1];
+        }
+        $at = null;
+        $tag = 'div';
+        foreach (['keywords', 'doi', 'authors'] as $class) {
+            $pattern = '/<(section|div)\b[^>]*\bclass="[^"]*\b' . $class . '\b[^"]*"[^>]*>/i';
+            if (preg_match($pattern, $html, $m, PREG_OFFSET_CAPTURE, $from)) {
+                $at = self::closingTagEnd($html, strtolower($m[1][0]), $m[0][1]);
+                if ($at !== null) {
+                    $tag = strtolower($m[1][0]);
+                    break;
+                }
+            }
+        }
+        if ($at === null && preg_match('#</h1>#i', $html, $m, PREG_OFFSET_CAPTURE, $from)) {
+            $at = $m[0][1] + strlen($m[0][0]);
+        }
+        if ($at === null) {
+            return $html;
+        }
+
+        $shown = trim((string) parse_url($url, PHP_URL_PATH), '/') ?: $url;  // https://doi-services.com/1003/165?redirect -> 1003/165
+        $e = fn (string $s) => htmlspecialchars($s, ENT_QUOTES);
+        $block = "<{$tag} class=\"item doi archive_id\"><h2 class=\"label\">{$e($label)}:</h2> "
+            . "<span class=\"value\"><a href=\"{$e($url)}\">{$e($shown)}</a></span></{$tag}>";
+        return substr($html, 0, $at) . $block . substr($html, $at);
+    }
+
+    /** Offset just after the tag that closes the one opened at $openAt (handles nesting). */
+    private static function closingTagEnd(string $html, string $tag, int $openAt): ?int
+    {
+        preg_match_all('#<(/?)' . $tag . '\b[^>]*>#i', $html, $tags, PREG_SET_ORDER | PREG_OFFSET_CAPTURE, $openAt);
+        $depth = 0;
+        foreach ($tags as $t) {
+            $depth += $t[1][0] === '/' ? -1 : 1;
+            if ($depth === 0) {
+                return $t[0][1] + strlen($t[0][0]);
+            }
+        }
+        return null;
     }
 
     /**

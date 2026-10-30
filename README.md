@@ -121,15 +121,15 @@ The install's page in `/admin` has a **Download plugin** button and these same s
    webhook_url = "https://doi-services.com/hooks/ojs/1"
    webhook_secret = "…"
    ```
-   Optionally add `label = "Permanent link"` to change the heading shown above the ID on article pages.
+   Optionally add e.g. `label = "Permanent link"` to show another label instead of "DOI".
 4. Publish (or unpublish and republish) a test article and check **/admin → Sync log** for a `webhook` entry, then (about a minute later) an `ojs-id` entry. The article page in OJS now shows the ID.
 5. For articles imported before the plugin was installed or upgraded: click **Sync now** on the install's page (or `python -m app.cli push-ids SOURCE_ID`; the nightly reconcile also does this).
 
-**Upgrading from 1.0:** upload the new `archiveSync.tar.gz` the same way; OJS offers to upgrade it. The config block stays as it is.
+**Upgrading:** download the new `archiveSync.tar.gz` from `/admin` and upload it the same way; OJS offers to upgrade it. The config block stays as it is.
 
 ### How the ID gets into OJS
 
-After every sync the worker sends the IDs OJS doesn't have yet to `/index.php/{journal}/archivesync/identifiers`, signed with the same secret as the webhooks. The plugin stores each one on the article (every version) as `archiveId` and shows it under the article details on the article page (default theme, or any theme that keeps the `Templates::Article::Details` hook). It is a separate field: OJS's own DOI field is not touched. The archive notes when OJS confirmed it (article page in /admin → "ID in OJS"), and the next sync re-sends it if it ever disappears from OJS.
+After every sync the worker sends the IDs OJS doesn't have yet to `/index.php/{journal}/archivesync/identifiers`, signed with the same secret as the webhooks. The plugin stores each one on the article (every version) as `archiveId` and shows it on the article page right after the keywords as `DOI: 1003/165`, linked to the `?redirect` URL (after the authors if there are no keywords, after the title as a last resort). It is inserted into the finished page, so it works with any theme. It is a separate field: OJS's own DOI field is not touched. The archive notes when OJS confirmed it (article page in /admin → "ID in OJS"), and the next sync re-sends it if it ever disappears from OJS.
 
 Without the config block the plugin only shows IDs it already has. If the archive is unreachable, OJS is not affected and the nightly reconcile catches up.
 

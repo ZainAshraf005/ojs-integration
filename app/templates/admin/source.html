@@ -50,7 +50,7 @@
     <a class="btn primary" href="/admin/plugin/archiveSync.tar.gz" download>Download plugin{% if plugin_version %} v{{ plugin_version }}{% endif %}</a>
   </div>
   <div class="card-body">
-    <p class="small muted" style="margin-top:0">The plugin sends new and unpublished articles here within a minute and shows each article's permanent link on its OJS page. Without it, new articles still arrive with the nightly sync (02:00), but OJS won't show the link.</p>
+    <p class="small muted" style="margin-top:0">The plugin sends new and unpublished articles here within a minute and shows each article's ID on its OJS page, under the keywords (e.g. <b>DOI: 1003/165</b>, linked). Without it, new articles still arrive with the nightly sync (02:00), but OJS won't show the link.</p>
     <ol class="steps">
       <li><b>Download</b> <code>archiveSync.tar.gz</code> with the button above. Don't unpack it.</li>
       <li><b>Upload it to OJS.</b> Log in to <a href="{{ source.base_url }}" target="_blank" rel="noopener">{{ source.base_url }}</a> as the site administrator, open any journal, then go to <b>Settings → Website → Plugins → Upload a New Plugin</b>, choose the file and click <b>Save</b>. One upload covers every journal in this install, and there is nothing to enable per journal. If an older version is installed, OJS offers to upgrade it instead.</li>
@@ -58,9 +58,9 @@
         {% set snippet = '[archivesync]\nwebhook_url = "' ~ webhook_url ~ '"\nwebhook_secret = "' ~ source.webhook_secret ~ '"' %}
         <pre class="snippet">{{ snippet }}</pre>
         <button type="button" class="btn sm" data-copy="{{ snippet }}">Copy config block</button>
-        <div class="small muted" style="margin-top:6px">Optional: add <code>label = "Permanent link"</code> on its own line to change the heading shown above the link on article pages. Keep the secret private: it proves notifications come from this install.</div>
+        <div class="small muted" style="margin-top:6px">Optional: add e.g. <code>label = "Permanent link"</code> on its own line to show another label instead of "DOI". Keep the secret private: it proves notifications come from this install.</div>
       </li>
-      <li><b>Push links for existing articles.</b> Click <b>Sync now</b> at the top of this page. About a minute later every archived article shows its permanent link in OJS.</li>
+      <li><b>Push links for existing articles.</b> Click <b>Sync now</b> at the top of this page. About a minute later every archived article shows its ID in OJS.</li>
       <li><b>Test it.</b> Publish an article (or unpublish and republish one). The <a href="/admin/log">Activity</a> log should show a <code>webhook</code> entry right away and an <code>ojs-id</code> entry about a minute later.</li>
     </ol>
   </div>
